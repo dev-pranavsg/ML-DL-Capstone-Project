@@ -50,14 +50,16 @@ def predict_activity(payload: WindowInput):
 @app.post("/evaluate")
 def evaluate_model(payload: BatchEvalInput):
     if not all([model, scaler, encoder]):
-        raise HTTPException(status_code=503, detail="Model assets not loaded.")
+        raise HTTPException(status_code = 503, detail = "Model assets not loaded.")
     
     X_raw, y_true_labels = np.array(payload.x_data), np.array(payload.y_true)
     if len(X_raw.shape) != 3 or X_raw.shape[1:] != (128, 12):
         raise HTTPException(status_code = 400, detail = "x_data shape must be (num_samples, 128, 12)")
-
+    
     num_samples = X_raw.shape[0]
-    X_scaled = scaler.transform(X_raw.reshape(-1, 12)).reshape(num_samples, 128, 12)
+    
+    X_flattened = X_raw.reshape(-1, 12).astype(np.float32)
+    X_scaled = scaler.transform(X_flattened).reshape(num_samples, 128, 12)
 
     predictions = model.predict(X_scaled)
     y_pred_labels = encoder.inverse_transform(np.argmax(predictions, axis = 1))
