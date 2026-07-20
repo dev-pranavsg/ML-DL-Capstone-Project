@@ -1,92 +1,55 @@
-import io
-import requests
+import os
+import joblib
 import numpy as np
-import pandas as pd
-import streamlit as st
+import tensorflow as tf
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
 
-st.set_page_config(page_title="HHAR Classifier", page_icon = "🏃", layout = "wide")
-st.title("HHAR Human Activity Classifier")
+app = FastAPI(title = "HHAR API", version = "1.0")
 
-backend = st.sidebar.text_input("Backend URL", "https://ml-dl-capstone-project.onrender.com").rstrip("/")
+app.add_middleware(CORSMiddleware, allow_origins = ["*"], allow_credentials = True, allow_methods = ["*"],
+    allow_headers = ["*"],
+)
 
-try:
-    requests.get(f"{backend}/health", timeout = 3).raise_for_status()
-    st.sidebar.success("🟢 Backend Connected")
-except:
-    st.sidebar.error("🔴 Backend Offline")
+MODEL_PATH = "best_hhar.keras"
+SCALER_PATH = "scaler.pkl"
+ENCODER_PATH = "encoder.pkl"
 
-activities = ["walking", "standing", "sitting", "biking", "stairsup", "stairsdown"]
+model, scaler, encoder = None, None, None
 
-try:
-    activities = requests.get(f"{backend}/classes").json()["activities"]
-except:
-    pass
+@app.on_event("startup")
+def load_resources():
+    global model, scaler, encoder
+    if os.path.exists(MODEL_PATH): model = tf.keras.models.load_model(MODEL_PATH)
+    if os.path.exists(SCALER_PATH): scaler = joblib.load(SCALER_PATH)
+    if os.path.exists(ENCODER_PATH): encoder = joblib.load(ENCODER_PATH)
 
-if "window" not in st.session_state:
-    st.session_state.window = None
+class WindowInput(BaseModel):
+    data: List[List[float]]
 
-gen, upload, paste = st.tabs(["🎲 Generate", "📁 Upload CSV", "⌨️ Paste CSV"])
+@app.post("/predict")
+def predict_activity(payload: WindowInput):
+    if not all([model, scaler, encoder]):
+        raise HTTPException(status_code = 503, detail = "Model assets not loaded.")
+    
+    input_data = np.array(payload.data)
+    if input_data.shape != (128, 12):
+        raise HTTPException(status_code = 400, detail = "Shape must be (128, 12)")
+    
+    scaled_data = scaler.transform(input_data)
+    model_input = np.expand_dims(scaled_data, axis = 0)
+    
+    predictions = model.predict(model_input)
+    class_idx = np.argmax(predictions, axis = 1)[0]
+    
+    return {
+        "activity": encoder.classes_[class_idx],
+        "confidence": float(predictions[0][class_idx]),
+        "all_probabilities": {encoder.classes_[i]: float(p) for i, p in enumerate(predictions[0])}
+    }
 
-with gen:
-    act = st.selectbox("Activity", activities)
-    if st.button("Generate"):
-        r = requests.post(f"{backend}/generate", json = {"activity": act})
-        if r.ok:
-            st.session_state.window = np.array(r.json()["data"])
-
-with upload:
-    file = st.file_uploader("CSV", type = "csv")
-    if file:
-        data = np.loadtxt(file, delimiter = ",")
-        if data.shape == (128, 12):
-            st.session_state.window = data
-        else:
-            st.error("CSV must be 128×12")
-
-with paste:
-    txt = st.text_area("Paste CSV")
-    if st.button("Load"):
-        try:
-            data = np.loadtxt(io.StringIO(txt), delimiter = ",")
-            if data.shape == (128, 12):
-                st.session_state.window = data
-            else:
-                st.error("Input must be 128×12")
-        except:
-            st.error("Invalid CSV")
-
-if st.session_state.window is not None:
-    st.divider()
-    st.subheader("Signal Preview")
-
-    df = pd.DataFrame(st.session_state.window, columns = [f"S{i+1}" for i in range(12)])
-
-    st.line_chart(df.iloc[:,:3])
-
-    if st.button("🚀 Predict", type = "primary"):
-        r = requests.post(f"{backend}/predict", json = {"data": st.session_state.window.tolist()})
-
-        if r.ok:
-            res = r.json()
-
-            c1, c2 = st.columns(2)
-            c1.metric("Activity", res["activity"].upper())
-            c2.metric("Confidence", f"{res['confidence']:.2%}")
-
-            st.subheader("Probabilities")
-
-            probs = (
-                pd.DataFrame(
-                    res["all_probabilities"].items(),
-                    columns = ["Activity","Probability"]
-                )
-                .sort_values("Probability", ascending = False)
-                .set_index("Activity")
-            )
-
-            st.bar_chart(probs)
-
-        else:
-            st.error(r.text)
-else:
-    st.info("Generate a demo signal or upload/paste a CSV.")
+@app.get("/health")
+def health():
+    return {"status": "healthy"}
