@@ -38,8 +38,8 @@ The model is a **1D Convolutional Neural Network (CNN)** trained on the HHAR (He
 
 where
 
-- **128** → Time steps
-- **12** → Sensor features
+- **128** -> Time steps
+- **12** -> Sensor features
 
 The 12 features correspond to:
 
@@ -47,6 +47,9 @@ The 12 features correspond to:
 - Phone Gyroscope (X, Y, Z)
 - Watch Accelerometer (X, Y, Z)
 - Watch Gyroscope (X, Y, Z)
+
+
+  All the 4 datasets have been combined and then the CNN model has been trained on so valid data needs to be given. Refer the ipynb file regarding the data cleaning and merging done.
 
 ---
 
@@ -89,17 +92,6 @@ The 12 features correspond to:
 - Joblib
 - Requests
 - Uvicorn
-
----
-
-## Model Workflow
-
-1. Receive a sensor window of shape **(128, 12)**.
-2. Normalize features using the saved **StandardScaler**.
-3. Pass the normalized window through the trained CNN model.
-4. Compute prediction probabilities.
-5. Decode the predicted class using the saved **LabelEncoder**.
-6. Return the predicted activity, confidence score, and class probabilities.
 
 ---
 
