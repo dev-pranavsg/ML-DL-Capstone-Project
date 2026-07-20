@@ -4,7 +4,7 @@ import requests
 
 st.title("HHAR Human Activity Classifier")
 
-backend_url = st.sidebar.text_input("Backend API URL", value = "https://ml-dl-capstone-project.onrender.com/")
+backend_url = st.sidebar.text_input("Backend API URL", value = "https://ml-dl-capstone-project.onrender.com")
 
 if st.button("Generate & Test Random Window"):
     test_window = np.random.randn(128, 12).tolist()
